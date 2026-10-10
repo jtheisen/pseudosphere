@@ -4,6 +4,7 @@ import { fragmentShader, vertexShader } from './shader';
 import { reflectionDomain } from './tilings';
 import { GpuTimer } from './GpuTimer';
 import type { GpuTiming } from './GpuTimer';
+import { atlasBounds, fishSvg, mirror, mirrorRadiusSquared } from './fish';
 
 export interface ViewSettings {
   turn: number; positionScale: number; zoom: number; tiling: number;
@@ -31,11 +32,32 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     element.appendChild(renderer.domElement);
     const gpuTimer = new GpuTimer(renderer.getContext() as WebGL2RenderingContext, timing=>callbacks.current.onTiming(timing));
+    const fishAtlas = new THREE.Texture();
+    fishAtlas.minFilter = THREE.LinearMipmapLinearFilter;
+    fishAtlas.magFilter = THREE.LinearFilter;
+    fishAtlas.generateMipmaps = true;
+    // Linear data channels encode four pigments plus dark/light engraving.
+    fishAtlas.colorSpace = THREE.NoColorSpace;
+    const svgUrl = URL.createObjectURL(new Blob([fishSvg()], {type:'image/svg+xml'}));
+    const fishImage = new Image();
+    let disposed = false;
+    fishImage.onload = () => {
+      if(!disposed) { fishAtlas.image=fishImage; fishAtlas.needsUpdate=true; }
+      URL.revokeObjectURL(svgUrl);
+    };
+    fishImage.onerror = () => {
+      URL.revokeObjectURL(svgUrl);
+      if(!disposed) callbacks.current.onError('The fish motif could not be loaded.');
+    };
+    fishImage.src = svgUrl;
     const uniforms = {
       resolution: { value: new THREE.Vector2() }, turn: { value: 0 },
       positionScale: { value: 0.65 }, zoom: { value: 5.8 },
       tileAngle: { value: 0 }, mirrorCenter: { value: 0 }, motifRadius: { value: 0 },
       elevation: { value: 0.25 }, pattern: { value: 0 }, palette: { value: 0 }, grid: { value: false },
+      fishAtlas: { value: fishAtlas },
+      fishMirror: { value: new THREE.Vector3(...mirror,mirrorRadiusSquared) },
+      fishBounds: { value: new THREE.Vector4(...atlasBounds) },
     };
     const material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms });
     renderer.debug.onShaderError = (_gl, _program, _vertex, fragment) => {
@@ -130,11 +152,12 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     window.addEventListener('blur',blur);
     canvas.addEventListener('wheel',wheel,{passive:false});
     return () => {
+      disposed=true; URL.revokeObjectURL(svgUrl); fishImage.onload=null; fishImage.onerror=null;
       cancelAnimationFrame(frame); resize.disconnect();
       canvas.removeEventListener('pointerdown',down); canvas.removeEventListener('pointermove',move);
       canvas.removeEventListener('pointerup',end); canvas.removeEventListener('pointercancel',end); canvas.removeEventListener('wheel',wheel);
       canvas.removeEventListener('lostpointercapture',end); window.removeEventListener('blur',blur);
-      gpuTimer.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
+      gpuTimer.dispose(); fishAtlas.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
     };
   }, []);
   return <div className="render-host" ref={host} aria-label="Interactive analytic pseudosphere. Drag horizontally to turn, vertically to tilt, and scroll to zoom." />;

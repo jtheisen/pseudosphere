@@ -15,6 +15,9 @@ uniform float elevation;
 uniform int pattern;
 uniform int palette;
 uniform bool grid;
+uniform sampler2D fishAtlas;
+uniform vec3 fishMirror;
+uniform vec4 fishBounds;
 const float PI = 3.141592653589793;
 
 // Tractrix height as a function of radius: acosh(1/r)-sqrt(1-r*r).
@@ -120,6 +123,77 @@ vec3 tile(vec2 p) {
   return vec3(p,parity);
 }
 
+vec2 fishReflect(vec2 p) {
+  vec2 d=p-fishMirror.xy;
+  return fishMirror.xy+d*fishMirror.z/dot(d,d);
+}
+
+vec3 fishColor(float index) {
+  if(palette==1) {
+    if(index<0.5) return vec3(.81,.78,.66);
+    if(index<1.5) return vec3(.34,.45,.40);
+    if(index<2.5) return vec3(.43,.51,.54);
+    return vec3(.66,.48,.36);
+  }
+  if(palette==2) {
+    if(index<0.5) return vec3(.77,.87,.88);
+    if(index<1.5) return vec3(.26,.58,.62);
+    if(index<2.5) return vec3(.22,.38,.65);
+    return vec3(.53,.67,.77);
+  }
+  if(index<0.5) return vec3(.84,.65,.16);
+  if(index<1.5) return vec3(.23,.44,.34);
+  if(index<2.5) return vec3(.22,.49,.67);
+  return vec3(.66,.31,.19);
+}
+
+vec3 fishPigment(vec2 disk,float pixelSpan) {
+  vec2 q=disk;
+  vec4 colors=vec4(0.,1.,2.,3.);
+  bool odd=false;
+  vec2 upper=vec2(-0.5,0.866025403784);
+  vec2 lower=vec2(0.5,0.866025403784);
+  for(int i=0;i<100;i++) {
+    float a=dot(q,upper),b=dot(q,lower);
+    if(a>0.) {
+      q-=2.*a*upper;
+      colors=colors.yxwz; // (01)(23), a 4-fold geometric rotation.
+      odd=!odd;
+    } else if(b<0.) {
+      q-=2.*b*lower;
+      // Complete each reflection by the PQ mirror to retain chirality.
+      if(odd) colors=colors.xwyz; // inverse of the other branch
+      else colors=colors.xzwy;
+      odd=!odd;
+    } else if(dot(q-fishMirror.xy,q-fishMirror.xy)<fishMirror.z) {
+      q=fishReflect(q); odd=!odd;
+    } else break;
+  }
+  vec2 triangle=q;
+  if(odd) q=fishReflect(q);
+  vec2 uv=(q-fishBounds.xy)/(fishBounds.zw-fishBounds.xy);
+  // Explicit gradients avoid spurious mip levels at reflection seams.
+  // The conformal metric supplies the local footprint before folding.
+  vec2 span=0.5*pixelSpan*(1.-dot(q,q))/(fishBounds.zw-fishBounds.xy);
+  uv.x*=0.5; span.x*=0.5;
+  vec3 data=texture2DGradEXT(fishAtlas,uv,vec2(span.x,0.),vec2(0.,span.y)).rgb;
+  float white=min(data.r,min(data.g,data.b));
+  float strength=max(data.r,max(data.g,data.b));
+  vec3 weights=data-vec3(white);
+  vec3 color=(weights.r*fishColor(colors.x)+weights.g*fishColor(colors.y)+weights.b*fishColor(colors.z)+white*fishColor(colors.w))/max(strength,0.001);
+  float engraving=texture2DGradEXT(fishAtlas,uv+vec2(.5,0.),vec2(span.x,0.),vec2(0.,span.y)).r;
+  color=mix(vec3(.045,.055,.05),color,min(1.,engraving*(255./128.)));
+  color=mix(color,vec3(.95,.91,.80),max(0.,(engraving-128./255.)*(255./127.)));
+  if(grid) {
+    float edge=min(abs(dot(triangle,upper)),abs(dot(triangle,lower)));
+    edge=min(edge,abs(length(triangle-fishMirror.xy)-sqrt(fishMirror.z)));
+    edge*=2./max(.00001,1.-dot(triangle,triangle));
+    color=mix(color,vec3(.94,.65,.31),1.-smoothstep(.003,.008,edge));
+  }
+  vec3 average=(fishColor(0.)+fishColor(1.)+fishColor(2.)+fishColor(3.))*.25;
+  return mix(color,average,smoothstep(.06,.22,pixelSpan));
+}
+
 vec3 pigment(vec3 p, vec3 normal) {
   float r = length(p.xz);
   vec3 paper = vec3(0.86,0.81,0.66);
@@ -136,6 +210,8 @@ vec3 pigment(vec3 p, vec3 normal) {
   vec2 w = vec2(u,v)*positionScale;
   float den = w.x*w.x+(w.y+1.0)*(w.y+1.0);
   vec2 disk = vec2(2.0*w.x, dot(w,w)-1.0)/den;
+  float pixelSpan = max(length(dFdx(disk)),length(dFdy(disk)))*2.0/max(0.00001,1.0-dot(disk,disk));
+  if(pattern==3) return fishPigment(disk,pixelSpan);
   vec3 folded = tile(disk);
   vec2 q = folded.xy;
   float cx = mirrorCenter;
@@ -170,7 +246,6 @@ vec3 pigment(vec3 p, vec3 normal) {
     color = mix(color,vec3(0.94,0.65,0.31),1.0-smoothstep(0.003,0.008,triangleEdge));
   }
   // Suppress subpixel detail toward the cusp and at grazing angles.
-  float pixelSpan = max(length(dFdx(disk)),length(dFdy(disk)))*2.0/max(0.00001,1.0-dot(disk,disk));
   color = mix(color,mix(paper,dark,0.5),smoothstep(0.06,0.22,pixelSpan));
   return color;
 }
