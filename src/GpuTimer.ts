@@ -2,6 +2,8 @@ export interface GpuTiming {
   status: 'unsupported' | 'settling' | 'measuring' | 'paused';
   meanMs: number | null;
   p95Ms: number | null;
+  frameMs: number | null;
+  renderPercent: number | null;
   samples: number;
   width: number;
   height: number;
@@ -17,6 +19,8 @@ export class GpuTimer {
   private pending: WebGLQuery[] = [];
   private active: WebGLQuery | null = null;
   private samples: number[] = [];
+  private frameIntervals: number[] = [];
+  private lastFrameAt: number | null = null;
   private key = '';
   private warmup = 30;
   private publishedAt = 0;
@@ -29,9 +33,15 @@ export class GpuTimer {
 
   private report(status: GpuTiming['status']) {
     const sorted = [...this.samples].sort((a,b)=>a-b);
+    const cadence = [...this.frameIntervals].sort((a,b)=>a-b);
+    const meanMs = this.samples.length ? this.samples.reduce((a,b)=>a+b,0)/this.samples.length : null;
+    const middle = Math.floor(cadence.length/2);
+    const frameMs = cadence.length >= 10 ? (cadence.length%2 ? cadence[middle] : (cadence[middle-1]+cadence[middle])/2) : null;
     this.publish({
       status,
-      meanMs: this.samples.length ? this.samples.reduce((a,b)=>a+b,0)/this.samples.length : null,
+      meanMs,
+      frameMs,
+      renderPercent: meanMs !== null && frameMs !== null ? 100*meanMs/frameMs : null,
       p95Ms: sorted.length ? sorted[Math.ceil(sorted.length*0.95)-1] : null,
       samples: this.samples.length, width: this.width, height: this.height,
     });
@@ -41,10 +51,13 @@ export class GpuTimer {
     for(const query of this.pending) this.gl.deleteQuery(query);
     this.pending = [];
     this.samples = [];
+    this.frameIntervals = [];
     this.warmup = 30;
   }
 
   begin(key: string, paused: boolean, width: number, height: number, now: number) {
+    const frameInterval = this.lastFrameAt === null ? null : now-this.lastFrameAt;
+    this.lastFrameAt = now;
     const changed = this.key !== key || this.width !== width || this.height !== height;
     this.width = width; this.height = height;
     if(changed) {
@@ -55,6 +68,10 @@ export class GpuTimer {
     }
     const ext = this.extension;
     if(!ext || paused) return;
+    if(frameInterval !== null && frameInterval > 0 && frameInterval < 250) {
+      this.frameIntervals.push(frameInterval);
+      if(this.frameIntervals.length > 120) this.frameIntervals.shift();
+    }
     if(this.gl.getParameter(ext.GPU_DISJOINT_EXT)) {
       // GPU clock discontinuities invalidate all outstanding results.
       this.clear();
