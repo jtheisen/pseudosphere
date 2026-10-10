@@ -17,65 +17,83 @@ uniform int palette;
 uniform bool grid;
 const float PI = 3.141592653589793;
 
-// Revolved tractrix: r = sech(t), h = t - tanh(t), a = 1.
-float surfaceRadius(float height) {
-  if(height <= 0.0) return 1.0;
-  float t;
-  if(height < 0.0001) {
-    // Inverse series avoids cancellation in t - tanh(t) near the rim.
-    float w = pow(3.0*height,1.0/3.0);
-    t = w*(1.0+w*w*(2.0/15.0+w*w*3.0/175.0));
-  } else {
-    t = height < 1.0 ? pow(3.0*height,1.0/3.0) : height+1.0;
-    for(int i=0;i<8;i++) {
-      float th = tanh(t);
-      t -= (t-th-height)/(th*th);
-    }
-  }
-  float e = exp(-t);
-  return 2.0*e/(1.0+e*e);
+// Tractrix height as a function of radius: acosh(1/r)-sqrt(1-r*r).
+// No inverse-profile Newton iteration is necessary.
+float surfaceGap(vec3 p) {
+  float r = min(length(p.xz),1.0);
+  if(r == 0.0) return -1.0e30; // The axis lies inside at every finite height.
+  float s = sqrt(max(0.0,1.0-r*r));
+  return p.y-(log((1.0+s)/r)-s);
 }
-float field(vec3 p) { return length(p.xz)-surfaceRadius(p.y); }
 
-// Adaptive ray marching, with sign-change bisection to refine crossings.
+// Split at analytic stationary points, then bracket the first intersection.
 bool intersectSurface(vec3 ro, vec3 rd, out float distance) {
   float aa = dot(rd.xz,rd.xz);
-  if(aa == 0.0) return false;
-  float bb = dot(ro.xz,rd.xz);
-  float cc = dot(ro.xz,ro.xz)-1.0;
-  float disc = bb*bb-aa*cc;
-  if(disc < 0.0) return false;
-  float lo = max(0.0,(-bb-sqrt(disc))/aa);
-  float hi = (-bb+sqrt(disc))/aa;
+  if(aa == 0.0) {
+    float r = length(ro.xz);
+    if(r == 0.0 || r > 1.0 || rd.y == 0.0) return false;
+    distance = -surfaceGap(ro)/rd.y;
+    return distance >= 0.0;
+  }
+  float closestDistance = -dot(ro.xz,rd.xz)/aa;
+  vec2 closestPoint = ro.xz+rd.xz*closestDistance;
+  float closestRadiusSquared = dot(closestPoint,closestPoint);
+  if(closestRadiusSquared > 1.0) return false;
+  float halfSpan = sqrt((1.0-closestRadiusSquared)/aa);
+  float lo = max(0.0,closestDistance-halfSpan);
+  float hi = closestDistance+halfSpan;
   if(rd.y > 0.0) lo=max(lo,-ro.y/rd.y);
   else if(rd.y < 0.0) hi=min(hi,-ro.y/rd.y);
   else if(ro.y < 0.0) return false;
   if(lo > hi) return false;
-  float t = lo+0.00001;
-  float prevT = t;
-  float prevF = field(ro+rd*t);
-  for(int i=0;i<240;i++) {
-    vec3 p = ro+rd*t;
-    float f = field(p);
-    float radius = surfaceRadius(p.y);
-    float d = abs(f)*sqrt(max(0.0,1.0-radius*radius));
-    float pixelWidth = t/(2.15*resolution.y);
-    if(f*prevF < 0.0) {
-      float a = prevT; float b = t; float fa = prevF;
-      for(int j=0;j<16;j++) {
-        float m = (a+b)*0.5; float fm = field(ro+rd*m);
-        if(fa*fm > 0.0) { a=m; fa=fm; } else { b=m; }
+  float cut1 = hi;
+  float cut2 = hi;
+  if(rd.y == 0.0) cut1 = clamp(closestDistance,lo,hi);
+  else {
+    // For G = y-profile(r), G'=0 implies
+    // A*q*q - B*q + D = 0, where q=r*r.
+    float A = aa+rd.y*rd.y;
+    float D = aa*closestRadiusSquared;
+    float B = aa+D;
+    float discriminant = B*B-4.0*A*D;
+    if(discriminant >= 0.0) {
+      float largeRoot = (B+sqrt(discriminant))/(2.0*A);
+      float smallRoot = D/(A*largeRoot);
+      for(int i=0;i<2;i++) {
+        float q = i == 0 ? smallRoot : largeRoot;
+        if(q < closestRadiusSquared || q > 1.0) continue;
+        // Squaring the derivative introduces spurious roots on the
+        // other side of closest approach; retain only the correct sign.
+        float offset = sqrt((q-closestRadiusSquared)/aa);
+        float cut = closestDistance+(rd.y < 0.0 ? offset : -offset);
+        if(cut <= lo || cut >= hi) continue;
+        if(cut < cut1) { cut2=cut1; cut1=cut; }
+        else cut2=min(cut2,cut);
       }
-      distance = (a+b)*0.5;
+    }
+  }
+  float a = lo;
+  float fa = surfaceGap(ro+rd*a);
+  for(int i=0;i<3;i++) {
+    float b = i == 0 ? cut1 : (i == 1 ? cut2 : hi);
+    if(b <= a) continue;
+    float fb = surfaceGap(ro+rd*b);
+    if(fa == 0.0) { distance=a; return true; }
+    if(fb == 0.0) { distance=b; return true; }
+    // Each section is monotonic, so equal signs really mean no hit.
+    if((fa < 0.0) != (fb < 0.0)) {
+      for(int j=0;j<32;j++) {
+        float m = a+(b-a)*0.5;
+        if(m == a || m == b) break;
+        float fm = surfaceGap(ro+rd*m);
+        if(fm == 0.0) { a=m; b=m; break; }
+        if((fa < 0.0) == (fm < 0.0)) { a=m; fa=fm; }
+        else b=m;
+      }
+      distance = a+(b-a)*0.5;
       return true;
     }
-    if(abs(f) < max(0.000001,pixelWidth*0.05)) {
-      distance = t;
-      return true;
-    }
-    prevT=t; prevF=f;
-    t += max(max(0.000001,pixelWidth*0.1),d*0.45);
-    if(t > hi) break;
+    a=b; fa=fb;
   }
   return false;
 }

@@ -39,7 +39,7 @@ export default function App() {
         <section className="stage">
           <div className="stage-heading"><span className="live-dot"/> PSEUDOSPHERE <span className="stage-caption">Constant negative curvature</span></div>
           <Viewer settings={settings} motionReset={motionReset} onOrbit={onOrbit} onZoom={onZoom} onError={setError} onTiming={setTiming}/>
-          <div className="gpu-metric" aria-label="GPU benchmark"><span>GPU · RAY MARCHING</span><b>{timing?.status==='unsupported'?'Unavailable':timing?.status==='paused'?'Hold still':timing?.meanMs!=null?`${timing.meanMs.toFixed(2)} ms`:'Settling…'}</b><small>{timing?.meanMs!=null?`p95 ${timing.p95Ms!.toFixed(2)} ms · ${timing.samples}/120 samples`:timing?.status==='unsupported'?'GPU timer extension not supported':'Render time per frame'}{timing?` · ${timing.width} × ${timing.height}`:''}</small></div>
+          <div className="gpu-metric" aria-label="GPU benchmark"><span>GPU · SURFACE RENDER</span><b>{timing?.status==='unsupported'?'Unavailable':timing?.status==='paused'?'Hold still':timing?.meanMs!=null?`${timing.meanMs.toFixed(2)} ms`:'Settling…'}</b><small>{timing?.meanMs!=null?`p95 ${timing.p95Ms!.toFixed(2)} ms · ${timing.samples}/120 samples`:timing?.status==='unsupported'?'GPU timer extension not supported':'Render time per frame'}{timing?` · ${timing.width} × ${timing.height}`:''}</small></div>
           {error && <div className="error" role="alert">{error}</div>}
           <div className="axis"><span>y</span><i/><span className="axis-x">x</span><span className="axis-z">z</span></div>
           <div className="stage-equation">K = −1<span>EVERYWHERE ON THE SURFACE</span></div>
