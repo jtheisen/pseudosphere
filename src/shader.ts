@@ -50,21 +50,23 @@ bool intersectSurface(vec3 ro, vec3 rd, out float distance) {
   float cut2 = hi;
   if(rd.y == 0.0) cut1 = clamp(closestDistance,lo,hi);
   else {
-    // For G = y-profile(r), G'=0 implies
-    // A*q*q - B*q + D = 0, where q=r*r.
+    // Solve directly for s = r*r - closestRadiusSquared. Subtracting
+    // those nearly equal radii after solving loses the central turning
+    // point in float32, creating holes near horizontal and axial rays.
+    // The stationary-point equation is A*s*s - C*s + E = 0.
     float A = aa+rd.y*rd.y;
-    float D = aa*closestRadiusSquared;
-    float B = aa+D;
-    float discriminant = B*B-4.0*A*D;
-    if(discriminant >= 0.0) {
-      float largeRoot = (B+sqrt(discriminant))/(2.0*A);
-      float smallRoot = D/(A*largeRoot);
+    float C = aa*(1.0-closestRadiusSquared)-2.0*rd.y*rd.y*closestRadiusSquared;
+    float E = rd.y*rd.y*closestRadiusSquared*closestRadiusSquared;
+    float discriminant = C*C-4.0*A*E;
+    if(C > 0.0 && discriminant >= 0.0) {
+      float largeRoot = (C+sqrt(discriminant))/(2.0*A);
+      float smallRoot = E/(A*largeRoot);
       for(int i=0;i<2;i++) {
-        float q = i == 0 ? smallRoot : largeRoot;
-        if(q < closestRadiusSquared || q > 1.0) continue;
+        float s = i == 0 ? smallRoot : largeRoot;
+        if(closestRadiusSquared+s > 1.0) continue;
         // Squaring the derivative introduces spurious roots on the
         // other side of closest approach; retain only the correct sign.
-        float offset = sqrt((q-closestRadiusSquared)/aa);
+        float offset = sqrt(s/aa);
         float cut = closestDistance+(rd.y < 0.0 ? offset : -offset);
         if(cut <= lo || cut >= hi) continue;
         if(cut < cut1) { cut2=cut1; cut1=cut; }
