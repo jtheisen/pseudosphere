@@ -9,6 +9,10 @@ corepack pnpm dev
 
 Build with `corepack pnpm build`. If pnpm is already installed, omit `corepack`.
 
+GitHub Pages deployment is configured in `.github/workflows/pages.yml`. Push this repository to GitHub and choose **Settings → Pages → Source → GitHub Actions**. Pushes to `main` (or a manual workflow run) build and deploy `dist`. The workflow uses the site's actual Pages base path, including repository subpaths and custom domains. Local `pnpm dev` and normal builds still use `/`; only the deployment build receives `--base`. Texture paths follow that build setting. CI uses `npm ci` with the committed npm lockfile.
+
+To check a repository-path build locally, run `npm run build -- --base /pseudosphere/`, then `npm run preview` and visit `http://127.0.0.1:4173/pseudosphere/`.
+
 `pnpm test:geometry` checks the shader's intersection mathematics on the CPU, including 6,600 rays aimed at known surface points across steep camera angles, plus axial and horizontal cases. It also models float32 arithmetic for rays near the central axis and horizontal direction, guarding against cancellation in the turning-point offsets. Fish checks cover kite side rotations, folding handedness, neighbor colors, head-to-tail hypercycles and atlas coverage without holes or overlaps. These checks do not launch a browser or verify the actual GPU driver.
 
 Drag horizontally to turn and vertically to tilt, using a mouse or touch. Scroll to zoom. Releasing a moving drag applies inertia: horizontal rotation decays at 3.5/s, while tilt decays much faster at 18/s. Grabbing again stops momentum; a pause of up to 300 ms before releasing preserves momentum, while a longer pause does not fling. Tilt is clamped to approximately ±89°. Resetting the view or changing the tilt slider stops momentum. Rotation is accumulated without reducing modulo 2π; the coordinate branch cut stays at the back.

@@ -12,7 +12,7 @@ const patterns = [
 ];
 
 function PatternThumbnail({ id, className }: { id: number; className: string }) {
-  if(id!==0 && id!==6) return <span className={`pattern-thumb ${className}`}/>;
+  if(id!==0 && id!==6) return <span className={`pattern-thumb ${className}`} style={{backgroundImage:`url("${import.meta.env.BASE_URL}textures/planar-fish.webp")`}}/>;
   const boundary = 'M2 2 Q18.5 10 35 2 Q27 18.5 35 35 Q18.5 27 2 35 Q10 18.5 2 2Z';
   return <svg className="pattern-thumb" viewBox="0 0 37 37" aria-hidden="true" style={{background:'#d9cbaa'}}>
     <defs>

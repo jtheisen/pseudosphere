@@ -52,12 +52,12 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       if(!disposed) callbacks.current.onError('The fish motif could not be loaded.');
     };
     fishImage.src = svgUrl;
-    const sourceTexture = new THREE.TextureLoader().load('/textures/circle-limit-iii.jpg',()=>{},undefined,()=>{
+    const sourceTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/circle-limit-iii.jpg`,()=>{},undefined,()=>{
       if(!disposed) callbacks.current.onError('The original fish image could not be loaded.');
     });
     sourceTexture.colorSpace=THREE.NoColorSpace;
     sourceTexture.minFilter=THREE.LinearMipmapLinearFilter;
-    const planarTexture = new THREE.TextureLoader().load('/textures/planar-fish.webp',()=>{},undefined,()=>{
+    const planarTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/planar-fish.webp`,()=>{},undefined,()=>{
       if(!disposed) callbacks.current.onError('The planar fish image could not be loaded.');
     });
     planarTexture.colorSpace=THREE.NoColorSpace;

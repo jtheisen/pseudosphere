@@ -30,7 +30,7 @@ main,.workspace,.stage,.render-host{position:absolute;inset:0}
 .pattern-option:hover{background:#ffffff08}
 .pattern-option.selected{background:#8fa57b1c;border-color:#a9bc8c70}
 .pattern-thumb{width:37px;height:37px;flex-shrink:0;border-radius:5px;border:1px solid #ffffff20}
-.pattern-thumb.fish-planar{background:#e6d7b3 url('/textures/planar-fish.webp') 39% 44%/350% no-repeat}
+.pattern-thumb.fish-planar{background-color:#e6d7b3;background-position:39% 44%;background-size:350%;background-repeat:no-repeat}
 .pattern-copy{display:flex;flex-direction:column;gap:4px}
 .pattern-copy b{font-size:12px;font-weight:550}
 .pattern-copy small{font-size:9px;line-height:1.4;color:#92a294}
