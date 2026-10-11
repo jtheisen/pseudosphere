@@ -15,6 +15,10 @@ uniform float elevation;
 uniform int pattern;
 uniform int palette;
 uniform bool grid;
+const float seamWidth = 0.15;
+const float tearDepth = 0.02;
+const float tearFrequency = 30.0;
+const float tearDetail = 0.02;
 uniform sampler2D fishAtlas;
 uniform vec3 fishMirror;
 uniform vec4 fishBounds;
@@ -342,6 +346,14 @@ vec3 pigment(vec3 p, vec3 normal) {
   return color;
 }
 
+// Piecewise-linear irregularity gives the cut angular, torn edges.
+float tearNoise(float height) {
+  float cell = floor(height);
+  float a = fract(sin(cell*127.1+19.7)*43758.5453);
+  float b = fract(sin((cell+1.0)*127.1+19.7)*43758.5453);
+  return mix(a,b,fract(height))*2.0-1.0;
+}
+
 void main() {
   vec2 uv = (gl_FragCoord.xy-0.5*resolution)/resolution.y;
   vec3 bg = vec3(0.073,0.093,0.095);
@@ -365,6 +377,18 @@ void main() {
   float spec=pow(max(0.0,dot(n,normalize(light-rd))),50.0);
   color=color*(0.48+0.65*diffuse)+spec*0.10;
   color=pow(color,vec3(0.88));
+  // The coordinate branch cut stays at the back of the camera-facing
+  // trumpet. Open it into a narrow drawing-style tear, converging naturally
+  // with the surface toward the cusp. Each lip has its own irregularity.
+  float seamAngle = atan(p.x,-p.z);
+  float leftLip = -seamWidth+tearDepth*tearNoise(p.y*tearFrequency)+tearDetail*tearNoise(p.y*tearFrequency*(23.0/7.0));
+  float rightLip = seamWidth+tearDepth*tearNoise(p.y*tearFrequency*(8.0/7.0)+37.0)+tearDetail*tearNoise(p.y*tearFrequency*(27.0/7.0)+11.0);
+  float cutDistance = max(leftLip-seamAngle,seamAngle-rightLip);
+  float cutAA = max(fwidth(cutDistance),0.0001);
+  float surfaceMask = smoothstep(-cutAA,cutAA,cutDistance);
+  float lip = 1.0-smoothstep(0.0,0.009+cutAA,cutDistance);
+  color = mix(color,vec3(0.91,0.85,0.70),lip*0.65);
+  color = mix(bg,color,surfaceMask);
   gl_FragColor=vec4(color,1.0);
 }
 `;

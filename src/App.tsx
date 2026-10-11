@@ -6,9 +6,9 @@ import type { GpuTiming } from './GpuTimer';
 
 const initial: ViewSettings = { turn: 0.3, positionScale: 0.65, tiling: 0, zoom: 6.0, elevation: 0.26, pattern: 5, palette: 0, grid: false, playing: false };
 const patterns = [
-  { id: 0, urlId: 'feather-study', name: 'Feather study', sub: 'Mirrored ornament', className: 'feather' },
-  { id: 6, urlId: 'pure-geometry', name: 'Pure geometry', sub: 'Six squares · continuous geodesics', className: 'squares' },
-  { id: 5, urlId: 'fish-from-plane', name: 'Fish from the plane', sub: 'Drawing 123 · warped to (4, 3, 3)', className: 'fish-planar' },
+  { id: 0, urlId: 'procedural', name: 'Procedural', sub: 'Mirrored ornament', className: 'feather' },
+  { id: 6, urlId: 'procedural-plain', name: 'Procedural (plain)', sub: 'Six squares · continuous geodesics', className: 'squares' },
+  { id: 5, urlId: 'escher-e123', name: 'Escher E123', sub: 'Drawing 123 · warped to (4, 3, 3)', className: 'fish-planar' },
 ];
 
 function PatternThumbnail({ id, className }: { id: number; className: string }) {
