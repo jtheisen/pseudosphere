@@ -1,24 +1,53 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, ChevronDown, Expand, Grid2X2, MoveHorizontal, Pause, Play, RotateCcw, Sparkles } from 'lucide-react';
 import Viewer from './Viewer';
 import type { ViewSettings } from './Viewer';
-import { tilings } from './tilings';
 import type { GpuTiming } from './GpuTimer';
 
-const initial: ViewSettings = { turn: 0.3, positionScale: 0.65, tiling: 0, zoom: 6.0, elevation: 0.26, pattern: 3, palette: 0, grid: false, playing: false };
+const initial: ViewSettings = { turn: 0.3, positionScale: 0.65, tiling: 0, zoom: 6.0, elevation: 0.26, pattern: 5, palette: 0, grid: false, playing: false };
 const patterns = [
-  { name: 'Feather study', sub: 'Mirrored ornament', className: 'feather' },
-  { name: 'Concentric', sub: 'Hyperbolic rosettes', className: 'rings' },
-  { name: 'Pure geometry', sub: 'Regular hyperbolic polygons', className: 'squares' },
-  { name: 'Circle Limit fish', sub: 'Interlocking · (4, 3, 3)', className: 'fish' },
+  { id: 0, name: 'Feather study', sub: 'Mirrored ornament', className: 'feather' },
+  { id: 6, name: 'Pure geometry', sub: 'Six squares · continuous geodesics', className: 'squares' },
+  { id: 5, name: 'Fish from the plane', sub: 'Drawing 123 · warped to (4, 3, 3)', className: 'fish-planar' },
 ];
+
+function PatternThumbnail({ id, className }: { id: number; className: string }) {
+  if(id!==0 && id!==6) return <span className={`pattern-thumb ${className}`}/>;
+  const boundary = 'M2 2 Q18.5 10 35 2 Q27 18.5 35 35 Q18.5 27 2 35 Q10 18.5 2 2Z';
+  return <svg className="pattern-thumb" viewBox="0 0 37 37" aria-hidden="true" style={{background:'#d9cbaa'}}>
+    <defs>
+      <pattern id={`checker-${id}`} width="7.333" height="7.333" patternUnits="userSpaceOnUse" x="2" y="2"><rect width="7.333" height="7.333" fill="#d9cbaa"/><path d="M0 0H3.667V3.667H0Z M3.667 3.667H7.333V7.333H3.667Z" fill="#254b4c"/></pattern>
+      <clipPath id={`tile-${id}`}><path d={boundary}/></clipPath>
+      <radialGradient id="geometry-fill"><stop stopColor="#d9cbaa"/><stop offset="1" stopColor="#b35a33"/></radialGradient>
+    </defs>
+    <path d={boundary} fill={id===0?'url(#checker-0)':'url(#geometry-fill)'}/>
+    {id===0 && <g clipPath="url(#tile-0)" stroke="#b35a33" strokeWidth="1"><path d="M0 18.5H37 M18.5 0V37 M0 0L37 37 M0 37L37 0"/></g>}
+    <path d={boundary} fill="none" stroke="#254b4c" strokeWidth="1.3"/>
+  </svg>;
+}
+
+function locationPattern() {
+  const value = new URL(window.location.href).searchParams.get('pattern');
+  const id = value===null ? initial.pattern : Number(value);
+  return patterns.some(pattern=>pattern.id===id) ? id : initial.pattern;
+}
 
 function Slider({ label, value, min, max, step, display, onChange }: { label: string; value: number; min: number; max: number; step: number; display: string; onChange: (value: number) => void }) {
   return <label className="slider"><span>{label}<b>{display}</b></span><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))} /></label>;
 }
 
 export default function App() {
-  const [settings, setSettings] = useState(initial);
+  const [settings, setSettings] = useState(()=>({...initial,pattern:locationPattern()}));
+  useEffect(()=>{
+    const url = new URL(window.location.href);
+    url.searchParams.set('pattern',String(settings.pattern));
+    window.history.replaceState(window.history.state,'',url);
+  },[settings.pattern]);
+  useEffect(()=>{
+    const restore = ()=>setSettings(s=>({...s,pattern:locationPattern()}));
+    window.addEventListener('popstate',restore);
+    return ()=>window.removeEventListener('popstate',restore);
+  },[]);
   const [error,setError] = useState('');
   const [about,setAbout] = useState(false);
   const [expanded,setExpanded] = useState(false);
@@ -47,7 +76,7 @@ export default function App() {
           <div className="stage-bottom"><div className="gesture"><MoveHorizontal size={17}/><span>Drag to turn & tilt <i>·</i> Scroll to zoom</span></div><div className="stage-buttons"><button title="Reset view" aria-label="Reset view" onClick={resetView}><RotateCcw size={16}/></button><button title={expanded?'Restore layout':'Expand viewer'} aria-label={expanded?'Restore layout':'Expand viewer'} onClick={()=>setExpanded(!expanded)}><Expand size={16}/></button></div></div>
         </section>
         <aside className="controls"><div className="panel-title">Make it your own <Sparkles size={17}/></div>
-          <div className="control-section"><div className="section-label">01 <span>THE PATTERN</span></div><label className="tiling-select">Tessellation<select disabled={settings.pattern===3} value={settings.pattern===3?'fish':settings.tiling} onChange={e=>update('tiling',Number(e.target.value))}>{settings.pattern===3&&<option value="fish">(4, 3, 3) fish kites</option>}{tilings.map((t,i)=><option key={t.name} value={i}>{t.name}</option>)}</select></label><div className="pattern-list">{patterns.map((p,i)=><button key={p.name} className={`pattern-option ${settings.pattern===i?'selected':''}`} onClick={()=>update('pattern',i)}><span className={`pattern-thumb ${p.className}`}/><span className="pattern-copy"><b>{p.name}</b><small>{p.sub}</small></span><span className="radio"><i/></span></button>)}</div><p className="control-note">{settings.pattern===3?'Four right fins, three left fins, three noses/tails meet.':`${settings.tiling===0?'Five squares':'Seven triangles'} at every vertex.`}</p></div>
+          <div className="control-section"><div className="section-label">01 <span>THE PATTERN</span></div><div className="pattern-list">{patterns.map(({id:i,...p})=><button key={p.name} className={`pattern-option ${settings.pattern===i?'selected':''}`} onClick={()=>update('pattern',i)}><PatternThumbnail id={i} className={p.className}/><span className="pattern-copy"><b>{p.name}</b><small>{p.sub}</small></span><span className="radio"><i/></span></button>)}</div><p className="control-note">{settings.pattern===5?'Planar artwork warped into (4, 3, 3), at native resolution.':'Six squares at each vertex; opposite edges continue straight.'}</p></div>
           <div className="control-section"><div className="section-label">02 <span>THE PALETTE</span></div><div className="palettes">{[['#d9cbaa','#254b4c','#b35a33'],['#e0ded0','#30383b','#7b877d'],['#d6dfe0','#294576','#6b9eaf']].map((colors,i)=><button key={i} aria-label={['Ochre and teal palette','Graphite palette','Glacial blue palette'][i]} className={settings.palette===i?'selected':''} onClick={()=>update('palette',i)}>{colors.map(c=><span key={c} style={{background:c}}/>)}</button>)}</div></div>
           <div className="control-section"><div className="section-label">03 <span>THE SURFACE</span></div><Slider label="Pattern position" value={settings.positionScale} min={0.25} max={1.8} step={0.01} display={settings.positionScale.toFixed(2)} onChange={v=>update('positionScale',v)}/><p className="control-note position-note">Moves the pattern; tile size stays fixed.</p><Slider label="Camera tilt" value={settings.elevation} min={-1.55} max={1.55} step={0.01} display={Math.round(settings.elevation*180/Math.PI)+'°'} onChange={v=>update('elevation',v)}/><button className="toggle-row" onClick={()=>update('grid',!settings.grid)} aria-pressed={settings.grid}><span><Grid2X2 size={15}/> Show reflection domains</span><span className={`switch ${settings.grid?'on':''}`}><i/></span></button></div>
           <button className={`motion-button ${settings.playing?'active':''}`} onClick={()=>update('playing',!settings.playing)}>{settings.playing?<Pause size={16}/>:<Play size={16}/>} {settings.playing?'Pause the journey':'Let it turn'}<span>{settings.playing?'IN MOTION':'AUTO ROTATE'}</span></button>

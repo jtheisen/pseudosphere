@@ -18,6 +18,16 @@ uniform bool grid;
 uniform sampler2D fishAtlas;
 uniform vec3 fishMirror;
 uniform vec4 fishBounds;
+uniform sampler2D fishSource;
+uniform vec4 sourceRegistration;
+uniform vec4 sourceDisk;
+uniform sampler2D planarFish;
+uniform vec4 planarBasis;
+uniform vec2 planarO;
+uniform vec2 planarP;
+uniform vec2 planarQ;
+uniform vec4 planarSpine;
+uniform float planarSpineC;
 const float PI = 3.141592653589793;
 
 // Tractrix height as a function of radius: acosh(1/r)-sqrt(1-r*r).
@@ -147,6 +157,60 @@ vec3 fishColor(float index) {
   return vec3(.66,.31,.19);
 }
 
+vec3 printPigment(int index) {
+  if(pattern==5) {
+    if(index==0) return vec3(.68,.29,.28);
+    if(index==1) return vec3(.88,.61,.27);
+    if(index==2) return vec3(.28,.58,.60);
+    return vec3(.35,.49,.30);
+  }
+  if(index==0) return vec3(.88,.64,.22);
+  if(index==1) return vec3(.55,.62,.39);
+  if(index==2) return vec3(.29,.49,.53);
+  return vec3(.62,.35,.24);
+}
+
+vec3 printColor(vec3 sampleColor,vec4 colors,float neighborLabel) {
+  // Change only the pigment hue to follow the tiling's color permutation;
+  // the photographed engraving, shading, black ink and white paper remain.
+  vec3 chroma=sampleColor/max(.001,dot(sampleColor,vec3(1.)));
+  float best=1.e10;
+  int pigment=0;
+  for(int i=0;i<4;i++) {
+    if(pattern==5 && i==3) continue;
+    vec3 reference=printPigment(i);
+    vec3 difference=chroma-reference/dot(reference,vec3(1.));
+    float error=dot(difference,difference);
+    if(error<best) { best=error; pigment=i; }
+  }
+  // Drawing 123 has three colors around each fin. The hyperbolic right fin
+  // has four fish, so neighboring source fragments need their new kite labels.
+  int label=pattern==5&&pigment!=1?int(neighborLabel):pigment;
+  float mapped=colors[label];
+  vec3 target=palette==0?printPigment(int(mapped)):fishColor(mapped);
+  vec3 recolored=sampleColor*target/printPigment(pigment);
+  float high=max(sampleColor.r,max(sampleColor.g,sampleColor.b));
+  float low=min(sampleColor.r,min(sampleColor.g,sampleColor.b));
+  float mask=smoothstep(.09,.22,high-low)*smoothstep(.28,.50,high)*(1.-smoothstep(.50,.70,low));
+  return mix(sampleColor,recolored,mask);
+}
+
+vec2 planarUv(vec2 q,bool otherHalf) {
+  vec2 k=2.*q/(1.+dot(q,q));
+  vec2 weights=mat2(planarBasis.x,planarBasis.y,planarBasis.z,planarBasis.w)*k;
+  float layer=weights.x+weights.y;
+  float u=weights.x/max(layer,1.e-7);
+  float A=planarSpine.x*layer;
+  float B=planarSpine.w+planarSpine.y*layer;
+  float C=planarSpineC+planarSpine.z*layer;
+  float root=sqrt(max(0.,B*B-4.*A*C));
+  float spine=B>=0.?-2.*C/(B+root):(-B+root)/(2.*A);
+  float f=u*(1.-spine)/(spine+(1.-2.*spine)*u);
+  vec2 uv=planarO+layer*mix(planarQ-planarO,planarP-planarO,f);
+  if(otherHalf) uv.y=2.*planarP.y-uv.y;
+  return uv;
+}
+
 vec3 fishPigment(vec2 disk,float pixelSpan) {
   vec2 q=disk;
   vec4 colors=vec4(0.,1.,2.,3.);
@@ -171,26 +235,48 @@ vec3 fishPigment(vec2 disk,float pixelSpan) {
   }
   vec2 triangle=q;
   if(odd) q=fishReflect(q);
-  vec2 uv=(q-fishBounds.xy)/(fishBounds.zw-fishBounds.xy);
-  // Explicit gradients avoid spurious mip levels at reflection seams.
-  // The conformal metric supplies the local footprint before folding.
-  vec2 span=0.5*pixelSpan*(1.-dot(q,q))/(fishBounds.zw-fishBounds.xy);
-  uv.x*=0.5; span.x*=0.5;
-  vec3 data=texture2DGradEXT(fishAtlas,uv,vec2(span.x,0.),vec2(0.,span.y)).rgb;
-  float white=min(data.r,min(data.g,data.b));
-  float strength=max(data.r,max(data.g,data.b));
-  vec3 weights=data-vec3(white);
-  vec3 color=(weights.r*fishColor(colors.x)+weights.g*fishColor(colors.y)+weights.b*fishColor(colors.z)+white*fishColor(colors.w))/max(strength,0.001);
-  float engraving=texture2DGradEXT(fishAtlas,uv+vec2(.5,0.),vec2(span.x,0.),vec2(0.,span.y)).r;
-  color=mix(vec3(.045,.055,.05),color,min(1.,engraving*(255./128.)));
-  color=mix(color,vec3(.95,.91,.80),max(0.,(engraving-128./255.)*(255./127.)));
+  vec3 color;
+  if(pattern==5) {
+    vec2 imageUv=planarUv(triangle,odd);
+    // Estimate the warp's local Jacobian without taking screen derivatives
+    // across a folding seam. Sampling remains at the source's native size.
+    const float h=.0001;
+    vec2 jx=(planarUv(triangle+vec2(h,0.),odd)-imageUv)/h;
+    vec2 jy=(planarUv(triangle+vec2(0.,h),odd)-imageUv)/h;
+    float step=.5*pixelSpan*(1.-dot(triangle,triangle));
+    float neighbor=imageUv.x>planarO.x?0.:(odd?3.:2.);
+    color=printColor(texture2DGradEXT(planarFish,imageUv,jx*step,jy*step).rgb,colors,neighbor);
+  } else if(pattern==4) {
+    vec2 origin=sourceRegistration.xy;
+    vec2 d=q-origin;
+    vec2 denominator=vec2(1.-dot(origin,q),origin.y*q.x-origin.x*q.y);
+    vec2 z=vec2(dot(d,denominator),d.y*denominator.x-d.x*denominator.y)/dot(denominator,denominator);
+    z=mat2(sourceRegistration.z,sourceRegistration.w,-sourceRegistration.w,sourceRegistration.z)*z;
+    vec2 imageUv=sourceDisk.xy+z*sourceDisk.zw;
+    vec2 imageSpan=.5*pixelSpan*(1.-dot(z,z))*sourceDisk.zw;
+    color=printColor(texture2DGradEXT(fishSource,imageUv,vec2(imageSpan.x,0.),vec2(0.,imageSpan.y)).rgb,colors,-1.);
+  } else {
+    vec2 uv=(q-fishBounds.xy)/(fishBounds.zw-fishBounds.xy);
+    // Explicit gradients avoid spurious mip levels at reflection seams.
+    // The conformal metric supplies the local footprint before folding.
+    vec2 span=0.5*pixelSpan*(1.-dot(q,q))/(fishBounds.zw-fishBounds.xy);
+    uv.x*=0.5; span.x*=0.5;
+    vec3 data=texture2DGradEXT(fishAtlas,uv,vec2(span.x,0.),vec2(0.,span.y)).rgb;
+    float white=min(data.r,min(data.g,data.b));
+    float strength=max(data.r,max(data.g,data.b));
+    vec3 weights=data-vec3(white);
+    color=(weights.r*fishColor(colors.x)+weights.g*fishColor(colors.y)+weights.b*fishColor(colors.z)+white*fishColor(colors.w))/max(strength,0.001);
+    float engraving=texture2DGradEXT(fishAtlas,uv+vec2(.5,0.),vec2(span.x,0.),vec2(0.,span.y)).r;
+    color=mix(vec3(.045,.055,.05),color,min(1.,engraving*(255./128.)));
+    color=mix(color,vec3(.95,.91,.80),max(0.,(engraving-128./255.)*(255./127.)));
+  }
   if(grid) {
     float edge=min(abs(dot(triangle,upper)),abs(dot(triangle,lower)));
     edge=min(edge,abs(length(triangle-fishMirror.xy)-sqrt(fishMirror.z)));
     edge*=2./max(.00001,1.-dot(triangle,triangle));
     color=mix(color,vec3(.94,.65,.31),1.-smoothstep(.003,.008,edge));
   }
-  vec3 average=(fishColor(0.)+fishColor(1.)+fishColor(2.)+fishColor(3.))*.25;
+  vec3 average=pattern>=4&&palette==0?(printPigment(0)+printPigment(1)+printPigment(2)+printPigment(3))*.25:(fishColor(0.)+fishColor(1.)+fishColor(2.)+fishColor(3.))*.25;
   return mix(color,average,smoothstep(.06,.22,pixelSpan));
 }
 
@@ -211,7 +297,7 @@ vec3 pigment(vec3 p, vec3 normal) {
   float den = w.x*w.x+(w.y+1.0)*(w.y+1.0);
   vec2 disk = vec2(2.0*w.x, dot(w,w)-1.0)/den;
   float pixelSpan = max(length(dFdx(disk)),length(dFdy(disk)))*2.0/max(0.00001,1.0-dot(disk,disk));
-  if(pattern==3) return fishPigment(disk,pixelSpan);
+  if(pattern>=3 && pattern<=5) return fishPigment(disk,pixelSpan);
   vec3 folded = tile(disk);
   vec2 q = folded.xy;
   float cx = mirrorCenter;
@@ -221,15 +307,19 @@ vec3 pigment(vec3 p, vec3 normal) {
   float ink = 1.0-smoothstep(0.007,0.018,edge);
   vec3 color;
   if(pattern==0) {
-    // Mirrored feather ornament within the tessellation's triangles.
+    // In Klein coordinates the square's geodesic sides are straight,
+    // at x/y = +/-1/cx. Fit nine checker cells across the whole tile.
     vec2 a = q/motifRadius;
     float angle = atan(a.y,a.x);
     float rad = length(a);
-    float spine = abs(angle-tileAngle*0.5)*rad;
+    vec2 square = 2.0*q/(1.0+dot(q,q))*cx;
+    vec2 checks = floor((square+1.0)*4.5);
+    float checker = mod(checks.x+checks.y,2.0);
+    color = mix(dark,paper,checker);
+    // Preserve the original narrow brown spokes, rotated half a symmetry
+    // angle so they lie on the wedge boundaries rather than its bisector.
+    float spine = min(angle,tileAngle-angle)*rad;
     float feather = smoothstep(0.02,0.04,spine);
-    float ribs = sin(52.0*rad+13.0*angle);
-    float motif = smoothstep(-0.10,0.15,ribs)*smoothstep(0.02,0.09,spine);
-    color = mix(dark,paper,0.16+0.78*motif);
     color = mix(accent,color,feather);
     color = mix(color,dark,ink);
   } else if(pattern==1) {

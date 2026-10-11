@@ -5,6 +5,8 @@ import { reflectionDomain } from './tilings';
 import { GpuTimer } from './GpuTimer';
 import type { GpuTiming } from './GpuTimer';
 import { atlasBounds, fishSvg, mirror, mirrorRadiusSquared } from './fish';
+import { sourceDisk, sourceRegistration } from './fishSource';
+import { planarBasis,planarO,planarP,planarQ,planarSpine,planarSpineC } from './planarFish';
 
 export interface ViewSettings {
   turn: number; positionScale: number; zoom: number; tiling: number;
@@ -50,6 +52,16 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       if(!disposed) callbacks.current.onError('The fish motif could not be loaded.');
     };
     fishImage.src = svgUrl;
+    const sourceTexture = new THREE.TextureLoader().load('/textures/circle-limit-iii.jpg',()=>{},undefined,()=>{
+      if(!disposed) callbacks.current.onError('The original fish image could not be loaded.');
+    });
+    sourceTexture.colorSpace=THREE.NoColorSpace;
+    sourceTexture.minFilter=THREE.LinearMipmapLinearFilter;
+    const planarTexture = new THREE.TextureLoader().load('/textures/planar-fish.webp',()=>{},undefined,()=>{
+      if(!disposed) callbacks.current.onError('The planar fish image could not be loaded.');
+    });
+    planarTexture.colorSpace=THREE.NoColorSpace;
+    planarTexture.minFilter=THREE.LinearMipmapLinearFilter;
     const uniforms = {
       resolution: { value: new THREE.Vector2() }, turn: { value: 0 },
       positionScale: { value: 0.65 }, zoom: { value: 5.8 },
@@ -58,6 +70,16 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       fishAtlas: { value: fishAtlas },
       fishMirror: { value: new THREE.Vector3(...mirror,mirrorRadiusSquared) },
       fishBounds: { value: new THREE.Vector4(...atlasBounds) },
+      fishSource: { value: sourceTexture },
+      sourceRegistration: { value: new THREE.Vector4(...sourceRegistration) },
+      sourceDisk: { value: new THREE.Vector4(...sourceDisk) },
+      planarFish: { value: planarTexture },
+      planarBasis: { value: new THREE.Vector4(...planarBasis) },
+      planarO: { value: new THREE.Vector2(...planarO) },
+      planarP: { value: new THREE.Vector2(...planarP) },
+      planarQ: { value: new THREE.Vector2(...planarQ) },
+      planarSpine: { value: new THREE.Vector4(...planarSpine) },
+      planarSpineC: { value: planarSpineC },
     };
     const material = new THREE.ShaderMaterial({ vertexShader, fragmentShader, uniforms });
     renderer.debug.onShaderError = (_gl, _program, _vertex, fragment) => {
@@ -101,7 +123,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       for(const key of ['turn','positionScale','zoom','elevation','pattern','palette','grid'] as const) {
         uniforms[key].value = s[key] as never;
       }
-      const domain = reflectionDomain(s.tiling);
+      const domain = reflectionDomain((s.pattern===0 || s.pattern===6)?2:s.tiling);
       uniforms.tileAngle.value = domain.angle;
       uniforms.mirrorCenter.value = domain.mirrorCenter;
       uniforms.motifRadius.value = domain.motifRadius;
@@ -137,7 +159,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     };
     const end = (e: PointerEvent) => {
       if(!drag || e.pointerId!==drag.id) return;
-      if(e.type!=='pointerup' || performance.now()-drag.movedAt>100) stopMomentum();
+      if(e.type!=='pointerup' || performance.now()-drag.movedAt>300) stopMomentum();
       const id=drag.id;
       drag=null; canvas.classList.remove('dragging');
       if(canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
@@ -157,7 +179,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       canvas.removeEventListener('pointerdown',down); canvas.removeEventListener('pointermove',move);
       canvas.removeEventListener('pointerup',end); canvas.removeEventListener('pointercancel',end); canvas.removeEventListener('wheel',wheel);
       canvas.removeEventListener('lostpointercapture',end); window.removeEventListener('blur',blur);
-      gpuTimer.dispose(); fishAtlas.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
+      gpuTimer.dispose(); fishAtlas.dispose(); sourceTexture.dispose(); planarTexture.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
     };
   }, []);
   return <div className="render-host" ref={host} aria-label="Interactive analytic pseudosphere. Drag horizontally to turn, vertically to tilt, and scroll to zoom." />;

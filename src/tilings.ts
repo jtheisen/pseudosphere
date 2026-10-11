@@ -1,6 +1,7 @@
 export const tilings = [
   { name: '{4, 5} squares', sides: 4, meeting: 5 },
   { name: '{3, 7} triangles', sides: 3, meeting: 7 },
+  { name: '{4, 6} squares', sides: 4, meeting: 6 },
 ] as const;
 
 export function reflectionDomain(index: number) {

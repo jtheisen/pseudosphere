@@ -5,6 +5,12 @@ import ts from 'typescript';
 const source=readFileSync(new URL('../src/fish.ts',import.meta.url),'utf8');
 const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
 const {P,Q,R,pTurn,qTurn,rotate,reflect,mirror,mirrorRadiusSquared,atlasBounds,fishSvg}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const registrationSource=readFileSync(new URL('../src/fishSource.ts',import.meta.url),'utf8');
+const registrationJs=ts.transpileModule(registrationSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/import \{ P \} from '.\/fish';/,`const P=${JSON.stringify(P)};`);
+const {sourceUv}=await import(`data:text/javascript;base64,${Buffer.from(registrationJs).toString('base64')}`);
+const planarSource=readFileSync(new URL('../src/planarFish.ts',import.meta.url),'utf8');
+const planarJs=ts.transpileModule(planarSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/import \{ P, Q, R \} from '.\/fish';/,`const P=${JSON.stringify(P)},Q=${JSON.stringify(Q)},R=${JSON.stringify(R)};`);
+const {planarUv,planarO,planarP,planarQ}=await import(`data:text/javascript;base64,${Buffer.from(planarJs).toString('base64')}`);
 
 const close=(a,b)=>assert.ok(Math.hypot(a[0]-b[0],a[1]-b[1])<1e-8,`${a} != ${b}`);
 const swap=(v,a,b)=>{const next=v.slice();[next[a],next[b]]=[next[b],next[a]];return next;};
@@ -32,6 +38,72 @@ test('kite side rotations match nose/tail and have orders four and three',()=>{
   close(rotate(R,P,pTurn*4),R);
   close(rotate(R,Q,qTurn*3),R);
   close(reflect(reflect([.2,.05])),[.2,.05]);
+});
+
+test('the bitmap crop registers the kite to central print landmarks',()=>{
+  const pixel=q=>{const uv=sourceUv(q);return [uv[0]*316,(1-uv[1])*316];};
+  close(pixel(P),[158,157.5]);
+  const tail=pixel([0,0]),nose=pixel(R);
+  assert.ok(Math.abs(tail[0]-158)<1e-8 && tail[1]>220 && tail[1]<222);
+  assert.ok(Math.abs(nose[1]-157.5)<1e-8 && nose[0]>221 && nose[0]<222);
+  for(let i=0;i<80;i++) for(let j=0;j<80;j++) {
+    const point=fold([i/100-.1,j/100-.4]).point;
+    const uv=sourceUv(point);
+    assert.ok(uv[0]>.45&&uv[0]<.75&&uv[1]>.25&&uv[1]<.55);
+  }
+});
+
+test('the planar warp fixes fin vertices and joins the two kite halves',()=>{
+  close(planarUv([0,0]),planarO);
+  close(planarUv(P),planarP);
+  close(planarUv(Q),planarQ);
+  const klein=p=>p.map(v=>2*v/(1+p[0]**2+p[1]**2));
+  const disk=k=>k.map(v=>v/(1+Math.sqrt(1-k[0]**2-k[1]**2)));
+  const pk=klein(P),qk=klein(Q);
+  for(let i=0;i<=100;i++) {
+    const k=pk.map((v,j)=>v*(1-i/100)+qk[j]*i/100);
+    close(planarUv(disk(k)),planarUv(disk(k),true));
+  }
+});
+
+test('the planar white backbone maps onto the exact hypercycle',()=>{
+  const w=(R[0]**2+R[1]**2)/(2*R[1]);
+  for(let i=0;i<=100;i++) {
+    const x=R[0]*i/100;
+    let q=[x,w-Math.sign(w)*Math.sqrt(w*w-x*x)];
+    const other=(q[0]-mirror[0])**2+(q[1]-mirror[1])**2<mirrorRadiusSquared;
+    if(other) q=reflect(q);
+    const uv=planarUv(q,other);
+    assert.ok(Math.abs(uv[0]-planarO[0])<1e-10);
+    assert.ok(Number.isFinite(uv[1]));
+  }
+});
+
+test('the planar warp stays stable where the backbone crosses the half-kite seam',()=>{
+  const w=(R[0]**2+R[1]**2)/(2*R[1]);
+  const spine=x=>[x,w-Math.sign(w)*Math.sqrt(w*w-x*x)];
+  let lo=0,hi=R[0];
+  for(let i=0;i<60;i++) {
+    const mid=(lo+hi)/2,q=spine(mid);
+    if((q[0]-mirror[0])**2+(q[1]-mirror[1])**2>mirrorRadiusSquared) lo=mid;
+    else hi=mid;
+  }
+  const q=spine((lo+hi)/2),center=planarUv(q);
+  close(center,[planarO[0],planarP[1]]);
+  for(const delta of [[1e-7,0],[-1e-7,0],[0,1e-7],[0,-1e-7]]) {
+    const uv=planarUv(q.map((v,i)=>v+delta[i]));
+    assert.ok(Math.hypot(uv[0]-center[0],uv[1]-center[1])<1e-5);
+  }
+});
+
+test('the planar crop stays within the detailed central source region',()=>{
+  for(let i=0;i<160;i++) for(let j=0;j<160;j++) {
+    const q=fold([i/160-.3,j/160-.5]).point;
+    const other=(q[0]-mirror[0])**2+(q[1]-mirror[1])**2<mirrorRadiusSquared;
+    const uv=planarUv(other?reflect(q):q,other);
+    assert.ok(uv[0]>=planarQ[0]-1e-9&&uv[0]<=planarP[0]+1e-9);
+    assert.ok(uv[1]>=2*planarP[1]-planarO[1]-1e-9&&uv[1]<=planarO[1]+1e-9);
+  }
 });
 
 test('folding preserves fish handedness and four-color assignments',()=>{
