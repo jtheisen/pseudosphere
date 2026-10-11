@@ -22,6 +22,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
   const latest = useRef(settings);
   const reset = useRef(motionReset);
   const callbacks = useRef({ onOrbit, onZoom, onError, onTiming });
+  const wakeRender = useRef(()=>{});
   latest.current = settings;
   reset.current = motionReset;
   callbacks.current = { onOrbit, onZoom, onError, onTiming };
@@ -33,7 +34,14 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     catch { callbacks.current.onError('This viewer needs a browser with WebGL enabled.'); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     element.appendChild(renderer.domElement);
-    const gpuTimer = new GpuTimer(renderer.getContext() as WebGL2RenderingContext, timing=>callbacks.current.onTiming(timing));
+    let settledAt: number | null = null;
+    let timingUnsupported = false;
+    const gpuTimer = new GpuTimer(renderer.getContext() as WebGL2RenderingContext, timing=>{
+      timingUnsupported=timing.status==='unsupported';
+      if(timing.status==='settling' || timing.status==='paused') settledAt=null;
+      else if(timing.status==='unsupported' || timing.samples>=120) settledAt ??= performance.now();
+      callbacks.current.onTiming(timing);
+    });
     const fishAtlas = new THREE.Texture();
     fishAtlas.minFilter = THREE.LinearMipmapLinearFilter;
     fishAtlas.magFilter = THREE.LinearFilter;
@@ -44,7 +52,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     const fishImage = new Image();
     let disposed = false;
     fishImage.onload = () => {
-      if(!disposed) { fishAtlas.image=fishImage; fishAtlas.needsUpdate=true; }
+      if(!disposed) { fishAtlas.image=fishImage; fishAtlas.needsUpdate=true; wakeRender.current(); }
       URL.revokeObjectURL(svgUrl);
     };
     fishImage.onerror = () => {
@@ -52,12 +60,12 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       if(!disposed) callbacks.current.onError('The fish motif could not be loaded.');
     };
     fishImage.src = svgUrl;
-    const sourceTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/circle-limit-iii.jpg`,()=>{},undefined,()=>{
+    const sourceTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/circle-limit-iii.jpg`,()=>{ if(!disposed) wakeRender.current(); },undefined,()=>{
       if(!disposed) callbacks.current.onError('The original fish image could not be loaded.');
     });
     sourceTexture.colorSpace=THREE.NoColorSpace;
     sourceTexture.minFilter=THREE.LinearMipmapLinearFilter;
-    const planarTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/planar-fish.webp`,()=>{},undefined,()=>{
+    const planarTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/planar-fish.webp`,()=>{ if(!disposed) wakeRender.current(); },undefined,()=>{
       if(!disposed) callbacks.current.onError('The planar fish image could not be loaded.');
     });
     planarTexture.colorSpace=THREE.NoColorSpace;
@@ -94,6 +102,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     const resize = new ResizeObserver(() => {
       renderer.setSize(element.clientWidth, element.clientHeight);
       renderer.getDrawingBufferSize(uniforms.resolution.value);
+      wakeRender.current();
     });
     resize.observe(element);
     let frame = 0;
@@ -104,6 +113,8 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     let lastReset = reset.current;
     const stopMomentum = () => { turnVelocity=0; tiltVelocity=0; };
     const render = (now: number) => {
+      frame=0;
+      if(document.hidden) { stopMomentum(); return; }
       const dt = Math.min((now-last)/1000, 0.05);
       last = now;
       const s = latest.current;
@@ -133,15 +144,21 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       gpuTimer.begin(timingKey,paused,size.x,size.y,now);
       try { renderer.render(scene, camera); }
       finally { gpuTimer.end(); }
-      frame = requestAnimationFrame(render);
+      if(paused || settledAt===null || now-settledAt<2000) frame = requestAnimationFrame(render);
     };
-    frame = requestAnimationFrame(render);
+    const wake = () => {
+      settledAt=timingUnsupported ? performance.now() : null;
+      if(!frame && !disposed && !document.hidden) { last=performance.now(); frame=requestAnimationFrame(render); }
+    };
+    wakeRender.current=wake;
+    wake();
     const canvas = renderer.domElement;
     const down = (e: PointerEvent) => {
       if(!e.isPrimary || e.button!==0 || drag) return;
       stopMomentum();
       const now=performance.now();
       drag={id:e.pointerId,x:e.clientX,y:e.clientY,time:now,movedAt:now};
+      wake();
       canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging');
     };
     const move = (e: PointerEvent) => {
@@ -162,6 +179,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       if(e.type!=='pointerup' || performance.now()-drag.movedAt>300) stopMomentum();
       const id=drag.id;
       drag=null; canvas.classList.remove('dragging');
+      wake();
       if(canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
     };
     const blur = () => { stopMomentum(); drag=null; canvas.classList.remove('dragging'); };
@@ -172,15 +190,19 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     canvas.addEventListener('pointercancel',end);
     canvas.addEventListener('lostpointercapture',end);
     window.addEventListener('blur',blur);
+    document.addEventListener('visibilitychange',wake);
     canvas.addEventListener('wheel',wheel,{passive:false});
     return () => {
       disposed=true; URL.revokeObjectURL(svgUrl); fishImage.onload=null; fishImage.onerror=null;
+      wakeRender.current=()=>{};
       cancelAnimationFrame(frame); resize.disconnect();
       canvas.removeEventListener('pointerdown',down); canvas.removeEventListener('pointermove',move);
       canvas.removeEventListener('pointerup',end); canvas.removeEventListener('pointercancel',end); canvas.removeEventListener('wheel',wheel);
       canvas.removeEventListener('lostpointercapture',end); window.removeEventListener('blur',blur);
+      document.removeEventListener('visibilitychange',wake);
       gpuTimer.dispose(); fishAtlas.dispose(); sourceTexture.dispose(); planarTexture.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
     };
   }, []);
+  useEffect(()=>{ wakeRender.current(); },[settings,motionReset]);
   return <div className="render-host" ref={host} aria-label="Interactive analytic pseudosphere. Drag horizontally to turn, vertically to tilt, and scroll to zoom." />;
 }
