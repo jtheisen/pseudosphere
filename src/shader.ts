@@ -370,7 +370,8 @@ void main() {
   vec3 p=ro+rd*t;
   float r=length(p.xz);
   vec3 n=vec3(normalize(p.xz).x*sqrt(max(0.0,1.0-r*r)),r,normalize(p.xz).y*sqrt(max(0.0,1.0-r*r)));
-  if(dot(n,rd)>0.0) n=-n;
+  bool innerSurface = dot(n,rd)>0.0;
+  if(innerSurface) n=-n;
   vec3 color=pigment(p,n);
   vec3 light=normalize(vec3(-0.7,1.3,2.0));
   float diffuse=max(0.0,dot(n,light));
@@ -387,8 +388,10 @@ void main() {
   float cutAA = max(fwidth(cutDistance),0.0001);
   float surfaceMask = smoothstep(-cutAA,cutAA,cutDistance);
   float lip = 1.0-smoothstep(0.0,0.009+cutAA,cutDistance);
-  color = mix(color,vec3(0.91,0.85,0.70),lip*0.65);
-  color = mix(bg,color,surfaceMask);
+  if(innerSurface) {
+    color = mix(color,vec3(0.91,0.85,0.70),lip*0.65);
+    color = mix(bg,color,surfaceMask);
+  }
   gl_FragColor=vec4(color,1.0);
 }
 `;
