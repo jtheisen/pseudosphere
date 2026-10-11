@@ -11,6 +11,7 @@ import { planarBasis,planarO,planarP,planarQ,planarSpine,planarSpineC } from './
 export interface ViewSettings {
   turn: number; positionScale: number; zoom: number; tiling: number;
   elevation: number; pattern: number; palette: number; grid: boolean; playing: boolean;
+  renderScale: 1 | 2;
 }
 
 export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError, onTiming }: {
@@ -32,7 +33,6 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' }); }
     catch { callbacks.current.onError('This viewer needs a browser with WebGL enabled.'); return; }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     element.appendChild(renderer.domElement);
     let settledAt: number | null = null;
     let timingUnsupported = false;
@@ -99,11 +99,22 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     // Only a screen quad: the trumpet has no mesh or tessellated geometry.
     scene.add(new THREE.Mesh(geometry, material));
     const camera = new THREE.Camera();
-    const resize = new ResizeObserver(() => {
+    let bufferScale = 0;
+    const maxBufferSize = Math.min(renderer.capabilities.maxTextureSize,renderer.getContext().getParameter(renderer.getContext().MAX_RENDERBUFFER_SIZE) as number);
+    const resizeBuffer = () => {
+      const width=Math.max(1,element.clientWidth),height=Math.max(1,element.clientHeight);
+      // 1x is native display resolution; higher scales are downsampled by
+      // the browser into the same CSS-sized canvas. Respect GPU limits.
+      bufferScale=Math.min(window.devicePixelRatio*latest.current.renderScale,maxBufferSize/width,maxBufferSize/height);
+      renderer.setPixelRatio(bufferScale);
       renderer.setSize(element.clientWidth, element.clientHeight);
       renderer.getDrawingBufferSize(uniforms.resolution.value);
+    };
+    const onResize = () => {
+      resizeBuffer();
       wakeRender.current();
-    });
+    };
+    const resize = new ResizeObserver(onResize);
     resize.observe(element);
     let frame = 0;
     let last = performance.now();
@@ -118,6 +129,8 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       const dt = Math.min((now-last)/1000, 0.05);
       last = now;
       const s = latest.current;
+      const desiredScale=Math.min(window.devicePixelRatio*s.renderScale,maxBufferSize/Math.max(1,element.clientWidth),maxBufferSize/Math.max(1,element.clientHeight));
+      if(bufferScale!==desiredScale) resizeBuffer();
       if(lastReset !== reset.current) { stopMomentum(); lastReset=reset.current; }
       if(document.hidden) stopMomentum();
       if(!drag) {
@@ -191,6 +204,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
     canvas.addEventListener('lostpointercapture',end);
     window.addEventListener('blur',blur);
     document.addEventListener('visibilitychange',wake);
+    window.addEventListener('resize',onResize);
     canvas.addEventListener('wheel',wheel,{passive:false});
     return () => {
       disposed=true; URL.revokeObjectURL(svgUrl); fishImage.onload=null; fishImage.onerror=null;
@@ -200,6 +214,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       canvas.removeEventListener('pointerup',end); canvas.removeEventListener('pointercancel',end); canvas.removeEventListener('wheel',wheel);
       canvas.removeEventListener('lostpointercapture',end); window.removeEventListener('blur',blur);
       document.removeEventListener('visibilitychange',wake);
+      window.removeEventListener('resize',onResize);
       gpuTimer.dispose(); fishAtlas.dispose(); sourceTexture.dispose(); planarTexture.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
     };
   }, []);
