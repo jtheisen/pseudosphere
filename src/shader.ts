@@ -116,6 +116,8 @@ bool intersectSurface(vec3 ro, vec3 rd, out float distance) {
 // Fundamental triangle of {p,q}: angles pi/p, pi/2, pi/q.
 // All reflections are hyperbolic isometries.
 vec3 tile(vec2 p) {
+  // An even checkerboard changes color across an axis or tile side,
+  // but keeps its color when the diagonal exchanges x and y.
   float parity = 0.0;
   float cx = mirrorCenter;
   float rr = cx*cx-1.0;
@@ -124,7 +126,7 @@ vec3 tile(vec2 p) {
     bool changed = false;
     if(p.y < 0.0) { p.y = -p.y; parity = 1.0-parity; changed = true; }
     float wedgeDistance = dot(p,wedgeNormal);
-    if(wedgeDistance > 0.0) { p -= 2.0*wedgeDistance*wedgeNormal; parity = 1.0-parity; changed = true; }
+    if(wedgeDistance > 0.0) { p -= 2.0*wedgeDistance*wedgeNormal; changed = true; }
     vec2 q = p-vec2(cx,0.0);
     float d = dot(q,q);
     if(d < rr) { p = vec2(cx,0.0)+q*rr/d; parity = 1.0-parity; changed = true; }
@@ -308,13 +310,13 @@ vec3 pigment(vec3 p, vec3 normal) {
   vec3 color;
   if(pattern==0) {
     // In Klein coordinates the square's geodesic sides are straight,
-    // at x/y = +/-1/cx. Fit nine checker cells across the whole tile.
+    // at x/y = +/-1/cx. Fit eight checker cells across the whole tile.
     vec2 a = q/motifRadius;
     float angle = atan(a.y,a.x);
     float rad = length(a);
     vec2 square = 2.0*q/(1.0+dot(q,q))*cx;
-    vec2 checks = floor((square+1.0)*4.5);
-    float checker = mod(checks.x+checks.y,2.0);
+    vec2 checks = floor((square+1.0)*4.0);
+    float checker = mod(checks.x+checks.y+folded.z,2.0);
     color = mix(dark,paper,checker);
     // Preserve the original narrow brown spokes, rotated half a symmetry
     // angle so they lie on the wedge boundaries rather than its bisector.

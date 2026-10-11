@@ -6,9 +6,9 @@ import type { GpuTiming } from './GpuTimer';
 
 const initial: ViewSettings = { turn: 0.3, positionScale: 0.65, tiling: 0, zoom: 6.0, elevation: 0.26, pattern: 5, palette: 0, grid: false, playing: false };
 const patterns = [
-  { id: 0, name: 'Feather study', sub: 'Mirrored ornament', className: 'feather' },
-  { id: 6, name: 'Pure geometry', sub: 'Six squares · continuous geodesics', className: 'squares' },
-  { id: 5, name: 'Fish from the plane', sub: 'Drawing 123 · warped to (4, 3, 3)', className: 'fish-planar' },
+  { id: 0, urlId: 'feather-study', name: 'Feather study', sub: 'Mirrored ornament', className: 'feather' },
+  { id: 6, urlId: 'pure-geometry', name: 'Pure geometry', sub: 'Six squares · continuous geodesics', className: 'squares' },
+  { id: 5, urlId: 'fish-from-plane', name: 'Fish from the plane', sub: 'Drawing 123 · warped to (4, 3, 3)', className: 'fish-planar' },
 ];
 
 function PatternThumbnail({ id, className }: { id: number; className: string }) {
@@ -16,7 +16,7 @@ function PatternThumbnail({ id, className }: { id: number; className: string }) 
   const boundary = 'M2 2 Q18.5 10 35 2 Q27 18.5 35 35 Q18.5 27 2 35 Q10 18.5 2 2Z';
   return <svg className="pattern-thumb" viewBox="0 0 37 37" aria-hidden="true" style={{background:'#d9cbaa'}}>
     <defs>
-      <pattern id={`checker-${id}`} width="7.333" height="7.333" patternUnits="userSpaceOnUse" x="2" y="2"><rect width="7.333" height="7.333" fill="#d9cbaa"/><path d="M0 0H3.667V3.667H0Z M3.667 3.667H7.333V7.333H3.667Z" fill="#254b4c"/></pattern>
+      <pattern id={`checker-${id}`} width="8.25" height="8.25" patternUnits="userSpaceOnUse" x="2" y="2"><rect width="8.25" height="8.25" fill="#d9cbaa"/><path d="M0 0H4.125V4.125H0Z M4.125 4.125H8.25V8.25H4.125Z" fill="#254b4c"/></pattern>
       <clipPath id={`tile-${id}`}><path d={boundary}/></clipPath>
       <radialGradient id="geometry-fill"><stop stopColor="#d9cbaa"/><stop offset="1" stopColor="#b35a33"/></radialGradient>
     </defs>
@@ -28,8 +28,8 @@ function PatternThumbnail({ id, className }: { id: number; className: string }) 
 
 function locationPattern() {
   const value = new URL(window.location.href).searchParams.get('pattern');
-  const id = value===null ? initial.pattern : Number(value);
-  return patterns.some(pattern=>pattern.id===id) ? id : initial.pattern;
+  // Accept old numeric links, but always write the stable identifier.
+  return patterns.find(pattern=>pattern.urlId===value || String(pattern.id)===value)?.id ?? initial.pattern;
 }
 
 function Slider({ label, value, min, max, step, display, onChange }: { label: string; value: number; min: number; max: number; step: number; display: string; onChange: (value: number) => void }) {
@@ -40,7 +40,7 @@ export default function App() {
   const [settings, setSettings] = useState(()=>({...initial,pattern:locationPattern()}));
   useEffect(()=>{
     const url = new URL(window.location.href);
-    url.searchParams.set('pattern',String(settings.pattern));
+    url.searchParams.set('pattern',patterns.find(pattern=>pattern.id===settings.pattern)!.urlId);
     window.history.replaceState(window.history.state,'',url);
   },[settings.pattern]);
   useEffect(()=>{
