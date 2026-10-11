@@ -1,5 +1,12 @@
 # Pseudosphere
 
+Shared links use the static 1200 × 630 fish-trumpet image in `public/social-preview.png`, with Open Graph and Twitter metadata in `index.html`. The canonical site and preview URLs point to `https://jtheisen.github.io/pseudosphere/`. To regenerate the image on macOS without a browser:
+
+```sh
+swift scripts/decode-preview-source.swift public/textures/planar-fish.webp /tmp/pseudosphere-source.rgba
+node scripts/render-social-preview.mjs /tmp/pseudosphere-source.rgba
+```
+
 A React / TypeScript / Vite viewer of an analytic pseudosphere, with an intrinsic hyperbolic tessellation rendered in a fragment shader.
 
 ```sh
