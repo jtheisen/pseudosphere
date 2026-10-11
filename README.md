@@ -1,4 +1,4 @@
-# Traktrix
+# Pseudosphere
 
 A React / TypeScript / Vite viewer of an analytic pseudosphere, with an intrinsic hyperbolic tessellation rendered in a fragment shader.
 
