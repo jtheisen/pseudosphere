@@ -12,6 +12,7 @@ export interface ViewSettings {
   turn: number; positionScale: number; zoom: number; tiling: number;
   elevation: number; pattern: number; palette: number; grid: boolean; playing: boolean;
   renderScale: 1 | 2;
+  originalColors: boolean;
 }
 
 export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError, onTiming }: {
@@ -75,6 +76,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       positionScale: { value: 0.65 }, zoom: { value: 5.8 },
       tileAngle: { value: 0 }, mirrorCenter: { value: 0 }, motifRadius: { value: 0 },
       elevation: { value: 0.25 }, pattern: { value: 0 }, palette: { value: 0 }, grid: { value: false },
+      originalColors: { value: false },
       fishAtlas: { value: fishAtlas },
       fishMirror: { value: new THREE.Vector3(...mirror,mirrorRadiusSquared) },
       fishBounds: { value: new THREE.Vector4(...atlasBounds) },
@@ -144,7 +146,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
         if(Math.abs(tiltVelocity)<0.002) tiltVelocity=0;
         if(turnDelta || tiltDelta || s.playing) callbacks.current.onOrbit(turnDelta+(s.playing?dt*0.15:0),tiltDelta);
       }
-      for(const key of ['turn','positionScale','zoom','elevation','pattern','palette','grid'] as const) {
+      for(const key of ['turn','positionScale','zoom','elevation','pattern','palette','grid','originalColors'] as const) {
         uniforms[key].value = s[key] as never;
       }
       const domain = reflectionDomain((s.pattern===0 || s.pattern===6)?2:s.tiling);
@@ -153,7 +155,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       uniforms.motifRadius.value = domain.motifRadius;
       const size = uniforms.resolution.value;
       const paused = s.playing || !!drag || turnVelocity!==0 || tiltVelocity!==0 || document.hidden;
-      const timingKey = JSON.stringify([s.turn,s.positionScale,s.zoom,s.tiling,s.elevation,s.pattern,s.palette,s.grid,paused]);
+      const timingKey = JSON.stringify([s.turn,s.positionScale,s.zoom,s.tiling,s.elevation,s.pattern,s.palette,s.grid,s.originalColors,paused]);
       gpuTimer.begin(timingKey,paused,size.x,size.y,now);
       try { renderer.render(scene, camera); }
       finally { gpuTimer.end(); }
@@ -217,7 +219,7 @@ export default function Viewer({ settings, motionReset, onOrbit, onZoom, onError
       window.removeEventListener('resize',onResize);
       gpuTimer.dispose(); fishAtlas.dispose(); sourceTexture.dispose(); planarTexture.dispose(); geometry.dispose(); material.dispose(); renderer.dispose(); canvas.remove();
     };
-  }, []);
+  }, [fragmentShader,vertexShader]);
   useEffect(()=>{ wakeRender.current(); },[settings,motionReset]);
   return <div className="render-host" ref={host} aria-label="Interactive analytic pseudosphere. Drag horizontally to turn, vertically to tilt, and scroll to zoom." />;
 }

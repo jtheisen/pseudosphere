@@ -15,6 +15,7 @@ uniform float elevation;
 uniform int pattern;
 uniform int palette;
 uniform bool grid;
+uniform bool originalColors;
 const float seamWidth = 0.15;
 const float tearDepth = 0.02;
 const float tearFrequency = 30.0;
@@ -197,6 +198,17 @@ vec3 printColor(vec3 sampleColor,vec4 colors,float neighborLabel) {
   vec3 recolored=sampleColor*target/printPigment(pigment);
   float high=max(sampleColor.r,max(sampleColor.g,sampleColor.b));
   float low=min(sampleColor.r,min(sampleColor.g,sampleColor.b));
+  // Channel ratios may amplify a misclassified ink-edge pixel. Preserve
+  // its luminance, then reduce saturation if any channel exceeds the
+  // source's brightest channel. Both brightness constraints survive mixing.
+  vec3 luminance=vec3(.2126,.7152,.0722);
+  float brightness=dot(sampleColor,luminance);
+  recolored*=brightness/max(.00001,dot(recolored,luminance));
+  float peak=max(recolored.r,max(recolored.g,recolored.b));
+  if(peak>high) {
+    float saturation=clamp((high-brightness)/max(.00001,peak-brightness),0.,1.);
+    recolored=mix(vec3(brightness),recolored,saturation);
+  }
   float mask=smoothstep(.09,.22,high-low)*smoothstep(.28,.50,high)*(1.-smoothstep(.50,.70,low));
   return mix(sampleColor,recolored,mask);
 }
@@ -251,7 +263,8 @@ vec3 fishPigment(vec2 disk,float pixelSpan) {
     vec2 jy=(planarUv(triangle+vec2(0.,h),odd)-imageUv)/h;
     float step=.5*pixelSpan*(1.-dot(triangle,triangle));
     float neighbor=imageUv.x>planarO.x?0.:(odd?3.:2.);
-    color=printColor(texture2DGradEXT(planarFish,imageUv,jx*step,jy*step).rgb,colors,neighbor);
+    vec3 sourceColor=texture2DGradEXT(planarFish,imageUv,jx*step,jy*step).rgb;
+    color=originalColors?sourceColor:printColor(sourceColor,colors,neighbor);
   } else if(pattern==4) {
     vec2 origin=sourceRegistration.xy;
     vec2 d=q-origin;
@@ -283,6 +296,7 @@ vec3 fishPigment(vec2 disk,float pixelSpan) {
     color=mix(color,vec3(.94,.65,.31),1.-smoothstep(.003,.008,edge));
   }
   vec3 average=pattern>=4&&palette==0?(printPigment(0)+printPigment(1)+printPigment(2)+printPigment(3))*.25:(fishColor(0.)+fishColor(1.)+fishColor(2.)+fishColor(3.))*.25;
+  if(pattern==5 && originalColors) average=(printPigment(0)+printPigment(1)+printPigment(2))/3.;
   return mix(color,average,smoothstep(.06,.22,pixelSpan));
 }
 
